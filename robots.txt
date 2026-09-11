@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sausage-bar2by.pages.dev/sitemap.xml
