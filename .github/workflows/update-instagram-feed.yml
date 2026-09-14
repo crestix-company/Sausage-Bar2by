@@ -13,7 +13,7 @@ jobs:
   update-feed:
     runs-on: ubuntu-latest
     env:
-      APIFY_DATASET_ID: lORSwNRH7wBUm23aj
+      APIFY_TASK_ID: DeSWqW5VMzlaIHer8
       APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
     steps:
       - name: Check out repository
@@ -26,7 +26,7 @@ jobs:
             exit 1
           fi
 
-      - name: Run existing Apify task and prepare feed
+      - name: Run Apify task and prepare feed
         env:
           APIFY_API_BASE: https://api.apify.com/v2
         run: |
@@ -35,22 +35,8 @@ jobs:
           temp_dir=$(mktemp -d)
           trap 'rm -rf "$temp_dir"' EXIT
 
-          curl -fsSL -H "$auth_header" \
-            "$APIFY_API_BASE/datasets/$APIFY_DATASET_ID" \
-            -o "$temp_dir/dataset.json"
-          previous_run_id=$(jq -er '.data.actRunId' "$temp_dir/dataset.json")
-
-          curl -fsSL -H "$auth_header" \
-            "$APIFY_API_BASE/actor-runs/$previous_run_id" \
-            -o "$temp_dir/previous-run.json"
-          task_id=$(jq -er '.data.actorTaskId | select(type == "string" and length > 0)' \
-            "$temp_dir/previous-run.json") || {
-              echo "The configured dataset is not linked to an existing Apify Task. Existing feed remains unchanged." >&2
-              exit 1
-            }
-
           curl -fsSL -X POST -H "$auth_header" \
-            "$APIFY_API_BASE/actor-tasks/$task_id/runs" \
+            "$APIFY_API_BASE/actor-tasks/$APIFY_TASK_ID/runs" \
             -o "$temp_dir/new-run.json"
           run_id=$(jq -er '.data.id' "$temp_dir/new-run.json")
 
