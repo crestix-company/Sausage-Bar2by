@@ -2,6 +2,20 @@
    Sausage & Bar 2by — main.js
    ============================================================ */
 
+function getCompletedYears(openDate, today = new Date()) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(openDate);
+  if (!match) throw new TypeError('openDate must use YYYY-MM-DD format');
+
+  const [, year, month, day] = match.map(Number);
+  let years = today.getFullYear() - year;
+  const anniversaryHasPassed =
+    today.getMonth() + 1 > month ||
+    (today.getMonth() + 1 === month && today.getDate() >= day);
+
+  if (!anniversaryHasPassed) years -= 1;
+  return Math.max(0, years);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
 
   /* ---------- Header: scroll state ---------- */
@@ -42,6 +56,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
 
   /* ---------- Number counter animation ---------- */
+  document.querySelectorAll('.beer__stat-num[data-open-date]').forEach(el => {
+    el.dataset.count = getCompletedYears(el.dataset.openDate);
+  });
+
   const counterObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (!entry.isIntersecting) return;
@@ -132,6 +150,66 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   document.querySelectorAll('.menu__slider').forEach(initSlider);
+
+  /* ---------- Instagram gallery ---------- */
+  const gallery = document.getElementById('insta-gallery');
+
+  const renderInstagramPosts = (posts) => {
+    gallery.replaceChildren();
+
+    posts.slice(0, 4).forEach((post) => {
+      const item = document.createElement('div');
+      const link = document.createElement('a');
+      const image = document.createElement('img');
+
+      item.className = 'insta-item';
+      link.href = post.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      image.src = post.image;
+      image.alt = 'Sausage&Bar 2by Instagram投稿';
+      image.loading = 'lazy';
+
+      link.appendChild(image);
+      item.appendChild(link);
+      gallery.appendChild(item);
+    });
+  };
+
+  if (gallery) {
+    fetch('data/instagram.json', { cache: 'no-store' })
+      .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then(renderInstagramPosts)
+      .catch(() => {
+        // Keep the section empty if the checked-in fallback cannot be loaded.
+      });
+  }
+
+  /* ---------- Contact form ---------- */
+  const contactForm = document.getElementById('contact-form');
+  contactForm?.addEventListener('submit', event => {
+    event.preventDefault();
+    if (!contactForm.reportValidity()) return;
+
+    const formData = new FormData(contactForm);
+    const body = [
+      `お名前：${formData.get('name') || ''}`,
+      `メールアドレス：${formData.get('email') || ''}`,
+      `電話番号：${formData.get('tel') || ''}`,
+      '',
+      'お問い合わせ内容：',
+      formData.get('message') || ''
+    ].join('\n');
+    const subject = 'Sausage&Bar 2by お問い合わせ';
+    const mailto = 'mailto:ohsawa.yusuke1218@gmail.com'
+      + `?subject=${encodeURIComponent(subject)}`
+      + `&body=${encodeURIComponent(body)}`;
+
+    window.location.href = mailto;
+  });
 
   /* ---------- Floating CTA ---------- */
   const floatingCta = document.getElementById('floatingCta');

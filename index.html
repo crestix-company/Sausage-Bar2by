@@ -182,7 +182,7 @@
       <div class="beer__stat-sep"></div>
       <div class="beer__stat-item">
         <div class="beer__stat-inner">
-          <span class="beer__stat-num" data-count="10">0</span>
+          <span class="beer__stat-num" data-open-date="2015-12-25">0</span>
           <span class="beer__stat-unit">年</span>
         </div>
         <span class="beer__stat-label">地域で愛され続ける歴史</span>
@@ -564,7 +564,7 @@
           <small>※ご予約は食べログからもお承りしております。</small>
         </p>
 
-        <form class="contact__form" action="mailto:ohsawa.yusuke1218@gmail.com?subject=Sausage%26Bar%202by%E3%81%8A%E5%95%8F%E3%81%84%E5%90%88%E3%82%8F%E3%81%9B" method="POST" enctype="text/plain">
+        <form class="contact__form" id="contact-form">
           <div class="form-group">
             <label class="form-label" for="name">お名前 <span class="form-required">必須</span></label>
             <input class="form-input" type="text" id="name" name="name" placeholder="山田 太郎" required>
@@ -632,62 +632,6 @@
     </a>
   </div>
 
-  <script>
-    const gallery = document.getElementById('insta-gallery');
-
-    const renderPosts = (posts) => {
-      gallery.innerHTML = '';
-
-      posts.slice(0, 4).forEach((post) => {
-        const html = `
-          <div class="insta-item">
-            <a href="${post.url}" target="_blank" rel="noopener noreferrer">
-              <img src="${post.displayUrl}" alt="Instagram投稿">
-            </a>
-          </div>
-        `;
-        gallery.insertAdjacentHTML('beforeend', html);
-      });
-    };
-
-    const normalizeApiUrl = (apiUrl) => {
-      if (apiUrl.includes('datasets/')) {
-        return apiUrl.replace(/datasets\/[^\/]+/, 'acts/apify~instagram-scraper/runs/last/dataset');
-      }
-      return apiUrl;
-    };
-
-    const loadOptionalConfig = () => new Promise((resolve) => {
-      const script = document.createElement('script');
-      script.src = 'js/instagram-config.js';
-      script.onload = () => resolve(window.INSTAGRAM_API_URL || null);
-      script.onerror = () => resolve(null);
-      document.head.appendChild(script);
-    });
-
-    const fetchPosts = async (sourceUrl) => {
-      const response = await fetch(sourceUrl, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.json();
-    };
-
-    (async () => {
-      const localApiUrl = await loadOptionalConfig();
-
-      if (localApiUrl) {
-        try {
-          renderPosts(await fetchPosts(normalizeApiUrl(localApiUrl)));
-          return;
-        } catch (error) {
-          console.warn('Instagram API からの取得に失敗したため、ローカルJSONにフォールバックします。', error);
-        }
-      }
-
-      renderPosts(await fetchPosts('data/instagram.json'));
-    })().catch((error) => {
-      console.error('Instagram投稿データの取得に失敗しました:', error);
-    });
-  </script>
   <script src="js/main.js"></script>
 </body>
 </html>

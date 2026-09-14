@@ -1402,6 +1402,7 @@ address { font-style: normal; }
   .menu-card { flex: 0 0 calc(100% - 0px); }
 
   /* IG */
+  .insta-item { flex-basis: calc(50% - 8px); max-width: none; }
   /* Info */
   .info__grid { grid-template-columns: 1fr; }
 
@@ -1424,4 +1425,5 @@ address { font-style: normal; }
   .sausage__badges { flex-direction: column; }
   .concept__interior-grid { grid-template-columns: 1fr; }
   .concept__interior-item:last-child { display: block; }
+  .insta-item { flex-basis: 100%; max-width: 250px; }
 }

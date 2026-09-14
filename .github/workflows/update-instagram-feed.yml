@@ -2,7 +2,7 @@ name: Update Instagram Feed
 
 on:
   schedule:
-    - cron: '0 20 * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -18,28 +18,112 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Skip when secret is not configured
-        if: env.APIFY_API_TOKEN == ''
-        run: echo "APIFY_API_TOKEN secret is not set. Skipping feed update."
-
-      - name: Fetch latest Instagram posts from Apify
-        if: env.APIFY_API_TOKEN != ''
+      - name: Validate Apify credentials
         run: |
-          mkdir -p data
+          if [ -z "$APIFY_API_TOKEN" ]; then
+            echo "APIFY_API_TOKEN secret is not configured. Existing feed remains unchanged." >&2
+            exit 1
+          fi
 
-          curl -fsSL "https://api.apify.com/v2/datasets/${APIFY_DATASET_ID}/items?token=${APIFY_API_TOKEN}" \
-            | jq 'map({url, displayUrl})[:4]' > data/instagram.json
+      - name: Run existing Apify task and prepare feed
+        env:
+          APIFY_API_BASE: https://api.apify.com/v2
+        run: |
+          set -euo pipefail
+          auth_header="Authorization: Bearer ${APIFY_API_TOKEN}"
+          temp_dir=$(mktemp -d)
+          trap 'rm -rf "$temp_dir"' EXIT
+
+          curl -fsSL -H "$auth_header" \
+            "$APIFY_API_BASE/datasets/$APIFY_DATASET_ID" \
+            -o "$temp_dir/dataset.json"
+          previous_run_id=$(jq -er '.data.actRunId' "$temp_dir/dataset.json")
+
+          curl -fsSL -H "$auth_header" \
+            "$APIFY_API_BASE/actor-runs/$previous_run_id" \
+            -o "$temp_dir/previous-run.json"
+          task_id=$(jq -er '.data.actorTaskId | select(type == "string" and length > 0)' \
+            "$temp_dir/previous-run.json") || {
+              echo "The configured dataset is not linked to an existing Apify Task. Existing feed remains unchanged." >&2
+              exit 1
+            }
+
+          curl -fsSL -X POST -H "$auth_header" \
+            "$APIFY_API_BASE/actor-tasks/$task_id/runs" \
+            -o "$temp_dir/new-run.json"
+          run_id=$(jq -er '.data.id' "$temp_dir/new-run.json")
+
+          for attempt in {1..60}; do
+            curl -fsSL -H "$auth_header" \
+              "$APIFY_API_BASE/actor-runs/$run_id" \
+              -o "$temp_dir/run-status.json"
+            status=$(jq -er '.data.status' "$temp_dir/run-status.json")
+            case "$status" in
+              SUCCEEDED) break ;;
+              FAILED|ABORTED|TIMED-OUT)
+                echo "Apify Task ended with status: $status. Existing feed remains unchanged." >&2
+                exit 1
+                ;;
+            esac
+            if [ "$attempt" -eq 60 ]; then
+              echo "Apify Task did not finish within 10 minutes. Existing feed remains unchanged." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          dataset_id=$(jq -er '.data.defaultDatasetId' "$temp_dir/run-status.json")
+          curl -fsSL -H "$auth_header" \
+            "$APIFY_API_BASE/datasets/$dataset_id/items?clean=true&limit=4" \
+            -o "$temp_dir/items.json"
+
+          jq -e 'type == "array" and length == 4 and all(.[];
+            (.url | type == "string" and test("^https://(www\\.)?instagram\\.com/(p|reel|tv)/[A-Za-z0-9_-]+/?$")) and
+            (.displayUrl | type == "string" and test("^https://")))' \
+            "$temp_dir/items.json" > /dev/null || {
+              echo "Apify did not return four valid Instagram posts. Existing feed remains unchanged." >&2
+              exit 1
+            }
+
+          jq '[.[] | .url as $url | ($url | capture("/(?:p|reel|tv)/(?<code>[A-Za-z0-9_-]+)").code) as $code |
+            {url: $url, image: ("img/instagram/" + $code + ".jpg")} ]' \
+            "$temp_dir/items.json" > "$temp_dir/instagram.json"
+
+          if cmp -s "$temp_dir/instagram.json" data/instagram.json; then
+            all_images_valid=true
+            while IFS= read -r image_path; do
+              if [ ! -s "$image_path" ] || ! file --brief --mime-type "$image_path" | grep -q '^image/'; then
+                all_images_valid=false
+                break
+              fi
+            done < <(jq -r '.[].image' "$temp_dir/instagram.json")
+            if [ "$all_images_valid" = true ]; then
+              echo "No Instagram feed changes."
+              exit 0
+            fi
+          fi
+
+          mkdir -p "$temp_dir/images" img/instagram
+          while IFS=$'\t' read -r image_url filename; do
+            curl -fsSL --retry 3 --retry-all-errors "$image_url" \
+              -o "$temp_dir/images/$filename"
+            test -s "$temp_dir/images/$filename"
+            file --brief --mime-type "$temp_dir/images/$filename" | grep -q '^image/'
+          done < <(jq -r '.[] | [.displayUrl, (.url | capture("/(?:p|reel|tv)/(?<code>[A-Za-z0-9_-]+)").code + ".jpg")] | @tsv' \
+            "$temp_dir/items.json")
+
+          cp "$temp_dir"/images/* img/instagram/
+          mv "$temp_dir/instagram.json" data/instagram.json
 
       - name: Commit updated feed
-        if: env.APIFY_API_TOKEN != ''
         run: |
-          if git diff --quiet -- data/instagram.json; then
-            echo "No feed changes to commit."
+          if git diff --quiet -- data/instagram.json img/instagram; then
+            echo "No Instagram feed changes."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/instagram.json
+          git add data/instagram.json img/instagram
           git commit -m "Update Instagram feed"
           git push
