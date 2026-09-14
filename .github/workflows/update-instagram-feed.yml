@@ -78,14 +78,14 @@ jobs:
             -o "$temp_dir/items.json"
 
           jq -e 'type == "array" and length == 4 and all(.[];
-            (.url | type == "string" and test("^https://(www\\.)?instagram\\.com/p/[A-Za-z0-9_-]+/?$")) and
+            (.url | type == "string" and test("^https://(www\\.)?instagram\\.com/(p|reel|tv)/[A-Za-z0-9_-]+/?$")) and
             (.displayUrl | type == "string" and test("^https://")))' \
             "$temp_dir/items.json" > /dev/null || {
               echo "Apify did not return four valid Instagram posts. Existing feed remains unchanged." >&2
               exit 1
             }
 
-          jq '[.[] | .url as $url | ($url | capture("/p/(?<code>[A-Za-z0-9_-]+)").code) as $code |
+          jq '[.[] | .url as $url | ($url | capture("/(?:p|reel|tv)/(?<code>[A-Za-z0-9_-]+)").code) as $code |
             {url: $url, image: ("img/instagram/" + $code + ".jpg")} ]' \
             "$temp_dir/items.json" > "$temp_dir/instagram.json"
 
@@ -109,7 +109,7 @@ jobs:
               -o "$temp_dir/images/$filename"
             test -s "$temp_dir/images/$filename"
             file --brief --mime-type "$temp_dir/images/$filename" | grep -q '^image/'
-          done < <(jq -r '.[] | [.displayUrl, (.url | capture("/p/(?<code>[A-Za-z0-9_-]+)").code + ".jpg")] | @tsv' \
+          done < <(jq -r '.[] | [.displayUrl, (.url | capture("/(?:p|reel|tv)/(?<code>[A-Za-z0-9_-]+)").code + ".jpg")] | @tsv' \
             "$temp_dir/items.json")
 
           cp "$temp_dir"/images/* img/instagram/
