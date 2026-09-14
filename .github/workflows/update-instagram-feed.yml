@@ -2,7 +2,8 @@ name: Update Instagram Feed
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    # Tuesday and Friday at 05:00 JST (Monday and Thursday at 20:00 UTC).
+    - cron: '0 20 * * 1,4'
   workflow_dispatch:
 
 permissions:
@@ -74,20 +75,29 @@ jobs:
 
           dataset_id=$(jq -er '.data.defaultDatasetId' "$temp_dir/run-status.json")
           curl -fsSL -H "$auth_header" \
-            "$APIFY_API_BASE/datasets/$dataset_id/items?clean=true&limit=4" \
+            "$APIFY_API_BASE/datasets/$dataset_id/items?clean=true&limit=20" \
             -o "$temp_dir/items.json"
 
-          jq -e 'type == "array" and length == 4 and all(.[];
-            (.url | type == "string" and test("^https://(www\\.)?instagram\\.com/(p|reel|tv)/[A-Za-z0-9_-]+/?$")) and
-            (.displayUrl | type == "string" and test("^https://")))' \
-            "$temp_dir/items.json" > /dev/null || {
-              echo "Apify did not return four valid Instagram posts. Existing feed remains unchanged." >&2
+          jq '[.[] | select(
+                (.url | type == "string" and test("^https://(www\\.)?instagram\\.com/(p|reel|tv)/[A-Za-z0-9_-]+/?$")) and
+                (.displayUrl | type == "string" and test("^https://")) and
+                (.timestamp | type == "string" and length > 0)
+              )]
+              | sort_by(.timestamp)
+              | reverse
+              | reduce .[] as $post ([];
+                  if any(.[]; .url == $post.url) then . else . + [$post] end
+                )
+              | .[:4]' "$temp_dir/items.json" > "$temp_dir/latest-items.json"
+
+          jq -e 'length == 4' "$temp_dir/latest-items.json" > /dev/null || {
+              echo "Apify did not return four valid, dated Instagram posts. Existing feed remains unchanged." >&2
               exit 1
             }
 
           jq '[.[] | .url as $url | ($url | capture("/(?:p|reel|tv)/(?<code>[A-Za-z0-9_-]+)").code) as $code |
             {url: $url, image: ("img/instagram/" + $code + ".jpg")} ]' \
-            "$temp_dir/items.json" > "$temp_dir/instagram.json"
+            "$temp_dir/latest-items.json" > "$temp_dir/instagram.json"
 
           if cmp -s "$temp_dir/instagram.json" data/instagram.json; then
             all_images_valid=true
@@ -110,7 +120,7 @@ jobs:
             test -s "$temp_dir/images/$filename"
             file --brief --mime-type "$temp_dir/images/$filename" | grep -q '^image/'
           done < <(jq -r '.[] | [.displayUrl, (.url | capture("/(?:p|reel|tv)/(?<code>[A-Za-z0-9_-]+)").code + ".jpg")] | @tsv' \
-            "$temp_dir/items.json")
+            "$temp_dir/latest-items.json")
 
           cp "$temp_dir"/images/* img/instagram/
           mv "$temp_dir/instagram.json" data/instagram.json
